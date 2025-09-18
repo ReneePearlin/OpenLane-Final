@@ -15,11 +15,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Ensure config.tcl exists
+      - name: Detect design name and ensure config.tcl
         run: |
-          if [ ! -f designs/my_project/config.tcl ]; then
-            cat > designs/my_project/config.tcl <<EOL
-set ::env(DESIGN_NAME) my_project
+          # Find the first folder inside designs/
+          DESIGN_NAME=$(basename $(find designs -mindepth 1 -maxdepth 1 -type d | head -n 1))
+          echo "Detected design: $DESIGN_NAME"
+          echo "DESIGN_NAME=$DESIGN_NAME" >> $GITHUB_ENV
+
+          # Create a default config.tcl if missing
+          if [ ! -f designs/$DESIGN_NAME/config.tcl ]; then
+            cat > designs/$DESIGN_NAME/config.tcl <<EOL
+set ::env(DESIGN_NAME) $DESIGN_NAME
 set ::env(VERILOG_FILES) "\$::env(DESIGN_DIR)/src/*.v"
 set ::env(CLOCK_PORT) "clk"
 set ::env(CLOCK_PERIOD) "10"
@@ -30,13 +36,13 @@ EOL
         run: |
           cd /openlane
           ./flow.tcl \
-            -design /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}/designs/my_project \
+            -design /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}/designs/$DESIGN_NAME \
             -tag run_$(date +%s) -overwrite
 
       - name: Collect OpenLane results
         run: |
           mkdir -p openlane_results
-          cp -r designs/my_project/runs/*/results/* openlane_results/ || true
+          cp -r designs/$DESIGN_NAME/runs/*/results/* openlane_results/ || true
 
       - name: Upload results as artifacts
         uses: actions/upload-artifact@v3
