@@ -15,58 +15,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Detect design folder and ensure config.tcl
-        id: detect
+      - name: Run OpenLane flow
         run: |
-          echo "GITHUB_WORKSPACE = $GITHUB_WORKSPACE"
-          # sanity: ensure designs/ exists
-          if [ ! -d "$GITHUB_WORKSPACE/designs" ]; then
-            echo "ERROR: designs/ directory not found in repo workspace!"
-            ls -la "$GITHUB_WORKSPACE"
-            exit 1
-          fi
+          echo "Workspace: $GITHUB_WORKSPACE"
 
-          # pick the first directory under designs/
+          # detect design folder inside designs/
           DESIGN_NAME=$(find "$GITHUB_WORKSPACE/designs" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | head -n1)
           if [ -z "$DESIGN_NAME" ]; then
-            echo "ERROR: no design folder found under designs/"
-            ls -la "$GITHUB_WORKSPACE/designs"
+            echo "No design folder found inside designs/"
             exit 1
           fi
           echo "Detected design: $DESIGN_NAME"
-          echo "DESIGN_NAME=$DESIGN_NAME" >> "$GITHUB_ENV"
 
-          # show contents for debugging
-          echo "Contents of designs/$DESIGN_NAME:"
-          ls -la "$GITHUB_WORKSPACE/designs/$DESIGN_NAME" || true
+          # copy the design into /openlane/designs (OpenLane expects this)
+          mkdir -p /openlane/designs/$DESIGN_NAME
+          cp -r "$GITHUB_WORKSPACE/designs/$DESIGN_NAME"/* /openlane/designs/$DESIGN_NAME/
 
-          # create a default config.tcl if missing (safe: expands DESIGN_NAME but leaves $::env(...) intact)
-          if [ ! -f "$GITHUB_WORKSPACE/designs/$DESIGN_NAME/config.tcl" ]; then
-            cat > "$GITHUB_WORKSPACE/designs/$DESIGN_NAME/config.tcl" <<EOL
+          # if config.tcl missing, create one
+          if [ ! -f /openlane/designs/$DESIGN_NAME/config.tcl ]; then
+            cat > /openlane/designs/$DESIGN_NAME/config.tcl <<EOL
 set ::env(DESIGN_NAME) $DESIGN_NAME
 set ::env(VERILOG_FILES) "\$::env(DESIGN_DIR)/src/*.v"
 set ::env(CLOCK_PORT) "clk"
 set ::env(CLOCK_PERIOD) "10"
 EOL
-            echo "Wrote default config.tcl to designs/$DESIGN_NAME/config.tcl"
           fi
 
-      - name: Run OpenLane flow
-        run: |
-          echo "About to run OpenLane flow for: $DESIGN_NAME"
-          echo "Workspace: $GITHUB_WORKSPACE"
-          echo "Design path: $GITHUB_WORKSPACE/designs/$DESIGN_NAME"
-          cd /openlane || { echo "/openlane not found; printing workdir"; pwd; ls -la / || true; exit 1; }
-          echo "Running: ./flow.tcl -design $GITHUB_WORKSPACE/designs/$DESIGN_NAME -tag run_$(date +%s) -overwrite"
-          ./flow.tcl -design "$GITHUB_WORKSPACE/designs/$DESIGN_NAME" -tag run_$(date +%s) -overwrite
+          echo "Running OpenLane flow..."
+          cd /openlane
+          ./flow.tcl -design /openlane/designs/$DESIGN_NAME -tag run_$(date +%s) -overwrite
 
-      - name: Collect OpenLane results
-        run: |
-          echo "Collecting results from: $GITHUB_WORKSPACE/designs/$DESIGN_NAME/runs/"
-          mkdir -p openlane_results
-          # copy any results found (non-fatal if none)
-          cp -r "$GITHUB_WORKSPACE/designs/$DESIGN_NAME/runs"/*/results/* openlane_results/ 2>/dev/null || true
-          ls -la openlane_results || echo "no results collected"
+          # copy results back to workspace so we can upload
+          mkdir -p "$GITHUB_WORKSPACE/openlane_results"
+          cp -r /openlane/designs/$DESIGN_NAME/runs/*/results/* "$GITHUB_WORKSPACE/openlane_results/" || true
 
       - name: Upload results as artifact
         uses: actions/upload-artifact@v3
