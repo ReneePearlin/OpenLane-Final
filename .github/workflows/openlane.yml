@@ -1,0 +1,29 @@
+name: OpenLane Flow
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  run-openlane:
+    runs-on: ubuntu-latest
+
+    env:
+      DESIGN: my_project
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Run OpenLane flow
+        run: |
+          IMAGE="efabless/openlane:latest"
+          docker pull $IMAGE
+          echo "Using image: $IMAGE"
+
+          docker run --rm \
+            -v "${{ github.workspace }}":/openlane \
+            $IMAGE \
+            bash -lc "cd /openlane && ./flow.tcl -design designs/${DESIGN}"
+
