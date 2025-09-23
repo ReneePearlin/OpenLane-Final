@@ -27,11 +27,11 @@ jobs:
           fi
           echo "Detected design: $DESIGN_NAME"
 
-          # copy the design into /openlane/designs (OpenLane expects this)
+          # copy the design into /openlane/designs
           mkdir -p /openlane/designs/$DESIGN_NAME
-          cp -r "$GITHUB_WORKSPACE/designs/$DESIGN_NAME"/* /openlane/designs/$DESIGN_NAME/
+          cp -r "$GITHUB_WORKSPACE/designs/$DESIGN_NAME"/* /openlane/designs/$DESIGN_NAME/ || true
 
-          # if config.tcl missing, create one
+          # create config.tcl if missing
           if [ ! -f /openlane/designs/$DESIGN_NAME/config.tcl ]; then
             cat > /openlane/designs/$DESIGN_NAME/config.tcl <<EOL
 set ::env(DESIGN_NAME) $DESIGN_NAME
@@ -43,11 +43,16 @@ EOL
 
           echo "Running OpenLane flow..."
           cd /openlane
-          ./flow.tcl -design /openlane/designs/$DESIGN_NAME -tag run_$(date +%s) -overwrite
+          ./flow.tcl -design $DESIGN_NAME -tag run_$(date +%s) -overwrite
 
-          # copy results back to workspace so we can upload
+          # copy results back
           mkdir -p "$GITHUB_WORKSPACE/openlane_results"
-          cp -r /openlane/designs/$DESIGN_NAME/runs/*/results/* "$GITHUB_WORKSPACE/openlane_results/" || true
+          RESULTS_DIR=$(find /openlane/designs/$DESIGN_NAME/runs/*/results -type d | head -n1)
+          if [ -n "$RESULTS_DIR" ]; then
+            cp -r "$RESULTS_DIR"/* "$GITHUB_WORKSPACE/openlane_results/"
+          else
+            echo "No results found"
+          fi
 
       - name: Upload results as artifact
         uses: actions/upload-artifact@v3
