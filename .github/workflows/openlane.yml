@@ -1,61 +1,43 @@
-name: OpenLane Flow
+name: OpenLane R2G Flow
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
+    paths:
+      - "src/**"
+      - ".github/workflows/openlane-r2g.yml"
 
 jobs:
-  build:
-    runs-on: ubuntu-24.04
-    container:
-      image: efabless/openlane:latest
+  openlane-r2g:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Run OpenLane flow
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Pull OpenLane Docker image
         run: |
-          echo "Workspace: $GITHUB_WORKSPACE"
+          docker pull efabless/openlane:latest
 
-          # detect design folder inside designs/
-          DESIGN_NAME=$(find "$GITHUB_WORKSPACE/designs" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | head -n1)
-          if [ -z "$DESIGN_NAME" ]; then
-            echo "No design folder found inside designs/"
-            exit 1
-          fi
-          echo "Detected design: $DESIGN_NAME"
+      - name: Run OpenLane R2G Flow
+        run: |
+          mkdir -p $PWD/work
+          cp -r src $PWD/work/rtl
+          docker run --rm \
+            -v $PWD/work:/openlane/work \
+            -e INPUT_DESIGN_NAME="$(ls $PWD/work/rtl | grep -m1 .*)" \
+            efabless/openlane:latest \
+            bash -c "
+              cd /openlane
+              ./flow.tcl -design /openlane/work/rtl
+            "
+        # Adjust INPUT_DESIGN_NAME and flow.tcl usage as per your repo design organization
 
-          # copy the design into /openlane/designs
-          mkdir -p /openlane/designs/$DESIGN_NAME
-          cp -r "$GITHUB_WORKSPACE/designs/$DESIGN_NAME"/* /openlane/designs/$DESIGN_NAME/ || true
-
-          # create config.tcl if missing
-          if [ ! -f /openlane/designs/$DESIGN_NAME/config.tcl ]; then
-            cat > /openlane/designs/$DESIGN_NAME/config.tcl <<EOL
-set ::env(DESIGN_NAME) $DESIGN_NAME
-set ::env(VERILOG_FILES) "\$::env(DESIGN_DIR)/src/*.v"
-set ::env(CLOCK_PORT) "clk"
-set ::env(CLOCK_PERIOD) "10"
-EOL
-          fi
-
-          echo "Running OpenLane flow..."
-          cd /openlane
-          ./flow.tcl -design $DESIGN_NAME -tag run_$(date +%s) -overwrite
-
-          # copy results back
-          mkdir -p "$GITHUB_WORKSPACE/openlane_results"
-          RESULTS_DIR=$(find /openlane/designs/$DESIGN_NAME/runs/*/results -type d | head -n1)
-          if [ -n "$RESULTS_DIR" ]; then
-            cp -r "$RESULTS_DIR"/* "$GITHUB_WORKSPACE/openlane_results/"
-          else
-            echo "No results found"
-          fi
-
-      - name: Upload results as artifact
-        uses: actions/upload-artifact@v3
+      - name: Upload Results (Optional)
+        uses: actions/upload-artifact@v4
         with:
           name: openlane-results
-          path: openlane_results
+          path: work/
