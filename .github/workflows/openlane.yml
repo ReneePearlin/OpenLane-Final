@@ -69,13 +69,29 @@ jobs:
           #W
           EOF
           
+      - name: Debug directory structure
+        run: |
+          echo "Current directory structure:"
+          find . -type f -name "*.json" -o -name "*.v" -o -name "*.cfg" | head -20
+          echo ""
+          echo "designs directory:"
+          ls -la designs/ || echo "designs directory not found"
+          echo ""
+          echo "designs/my_design directory:"
+          ls -la designs/my_design/ || echo "designs/my_design directory not found"
+          
       - name: Run OpenLane R2G Flow
         run: |
+          # Create a unique tag for this run
+          RUN_TAG="run_$(date +%Y_%m_%d_%H_%M_%S)"
+          echo "Running OpenLane with tag: $RUN_TAG"
+          
+          # Run OpenLane with correct volume mounting
           docker run --rm \
-            -v $PWD/openlane_run:/openlane/designs \
-            -v $PWD/results:/openlane/designs/my_design/runs \
+            -v $PWD/designs:/openlane/designs \
+            -v $PWD/runs:/openlane/designs/my_design/runs \
             efabless/openlane:2023.07.19-1 \
-            sh -c "flow.tcl -design my_design -tag run_$(date +%Y_%m_%d_%H_%M_%S)"
+            sh -c "flow.tcl -design my_design -tag $RUN_TAG"
             
       - name: Check results and create summary
         run: |
@@ -86,12 +102,34 @@ jobs:
             # Find the latest run directory
             LATEST_RUN=$(ls -t runs/ | head -n1)
             echo "Latest run: $LATEST_RUN" >> results_summary.md
+            echo ""
+            
+            # List all contents of runs directory for debugging
+            echo "All runs:"
+            ls -la runs/
+            echo ""
+            
+            # Check if the run directory exists and list its contents
+            if [ -d "runs/$LATEST_RUN" ]; then
+              echo "Contents of latest run ($LATEST_RUN):"
+              ls -la "runs/$LATEST_RUN/" || echo "Cannot list run directory contents"
+              echo ""
+              
+              # Check for results directory
+              if [ -d "runs/$LATEST_RUN/results" ]; then
+                echo "Results directory structure:"
+                find "runs/$LATEST_RUN/results" -type f | head -10
+              fi
+            fi
             
             # Check if final GDS was generated
             if [ -f "runs/$LATEST_RUN/results/final/gds/my_design.gds" ]; then
               echo "✅ GDSII generation: SUCCESS" >> results_summary.md
             else
               echo "❌ GDSII generation: FAILED" >> results_summary.md
+              # Look for GDS files anywhere in the run directory
+              echo "Looking for any GDS files..."
+              find "runs/$LATEST_RUN" -name "*.gds" 2>/dev/null || echo "No GDS files found"
             fi
             
             # Check if DEF was generated
@@ -99,6 +137,18 @@ jobs:
               echo "✅ DEF generation: SUCCESS" >> results_summary.md
             else
               echo "❌ DEF generation: FAILED" >> results_summary.md
+              # Look for DEF files anywhere in the run directory
+              echo "Looking for any DEF files..."
+              find "runs/$LATEST_RUN" -name "*.def" 2>/dev/null || echo "No DEF files found"
+            fi
+            
+            # Check for any error logs
+            if [ -f "runs/$LATEST_RUN/logs/openlane.log" ]; then
+              echo "" >> results_summary.md
+              echo "### Log Summary (last 20 lines)" >> results_summary.md
+              echo "\`\`\`" >> results_summary.md
+              tail -n 20 "runs/$LATEST_RUN/logs/openlane.log" >> results_summary.md
+              echo "\`\`\`" >> results_summary.md
             fi
             
             # Add timing summary if available
@@ -112,10 +162,11 @@ jobs:
             
             cat results_summary.md
           else
-            echo "No runs directory found - flow may have failed"
-            # Show what directories exist for debugging
+            echo "❌ No runs directory found - flow failed to start"
             echo "Available directories:"
             ls -la
+            echo ""
+            echo "Docker container may have failed. Check Docker logs above."
             exit 1
           fi
           
