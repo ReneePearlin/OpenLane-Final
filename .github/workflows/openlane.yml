@@ -42,6 +42,8 @@ jobs:
               "CLOCK_PERIOD": 10,
               "CLOCK_PORT": "clk",
               "CLOCK_NET": "clk",
+              "PDK": "sky130A",
+              "STD_CELL_LIBRARY": "sky130_fd_sc_hd",
               "FP_SIZING": "absolute",
               "DIE_AREA": "0 0 100 100",
               "PL_BASIC_PLACEMENT": true,
