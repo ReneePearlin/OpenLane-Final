@@ -20,14 +20,22 @@ jobs:
         run: |
           docker pull efabless/openlane:2023.07.19-1
           
-      - name: Prepare design files
+      - name: Prepare design directory structure
         run: |
-          mkdir -p openlane_run/designs/my_design/src
-          cp -r src/* openlane_run/designs/my_design/src/
+          # Create the design directory structure that OpenLane expects
+          mkdir -p designs/my_design/src
+          mkdir -p runs
+          
+          # Copy source files
+          cp -r src/* designs/my_design/src/
+          
+          # List the files to verify
+          echo "Source files copied:"
+          ls -la designs/my_design/src/
           
       - name: Create OpenLane config
         run: |
-          cat > openlane_run/designs/my_design/config.json << 'EOF'
+          cat > designs/my_design/config.json << 'EOF'
           {
               "DESIGN_NAME": "my_design",
               "VERILOG_FILES": "dir::src/*.v",
@@ -36,7 +44,6 @@ jobs:
               "CLOCK_NET": "clk",
               "FP_SIZING": "absolute",
               "DIE_AREA": "0 0 100 100",
-              "FP_PIN_ORDER_CFG": "dir::pin_order.cfg",
               "PL_BASIC_PLACEMENT": true,
               "PL_TARGET_DENSITY": 0.5,
               "GLB_RT_ADJUSTMENT": 0.1,
@@ -44,9 +51,13 @@ jobs:
           }
           EOF
           
+          # Verify config file was created
+          echo "Config file created:"
+          cat designs/my_design/config.json
+          
       - name: Create pin order config (optional)
         run: |
-          cat > openlane_run/designs/my_design/pin_order.cfg << 'EOF'
+          cat > designs/my_design/pin_order.cfg << 'EOF'
           #N
           clk
           rst_n
@@ -68,40 +79,43 @@ jobs:
             
       - name: Check results and create summary
         run: |
-          if [ -d "results" ]; then
+          if [ -d "runs" ]; then
             echo "## OpenLane Flow Results" > results_summary.md
             echo "" >> results_summary.md
             
             # Find the latest run directory
-            LATEST_RUN=$(ls -t results/ | head -n1)
+            LATEST_RUN=$(ls -t runs/ | head -n1)
             echo "Latest run: $LATEST_RUN" >> results_summary.md
             
             # Check if final GDS was generated
-            if [ -f "results/$LATEST_RUN/final/gds/my_design.gds" ]; then
+            if [ -f "runs/$LATEST_RUN/results/final/gds/my_design.gds" ]; then
               echo "✅ GDSII generation: SUCCESS" >> results_summary.md
             else
               echo "❌ GDSII generation: FAILED" >> results_summary.md
             fi
             
             # Check if DEF was generated
-            if [ -f "results/$LATEST_RUN/final/def/my_design.def" ]; then
+            if [ -f "runs/$LATEST_RUN/results/final/def/my_design.def" ]; then
               echo "✅ DEF generation: SUCCESS" >> results_summary.md
             else
               echo "❌ DEF generation: FAILED" >> results_summary.md
             fi
             
             # Add timing summary if available
-            if [ -f "results/$LATEST_RUN/reports/final_summary_report.csv" ]; then
+            if [ -f "runs/$LATEST_RUN/reports/final_summary_report.csv" ]; then
               echo "" >> results_summary.md
               echo "### Timing Summary" >> results_summary.md
               echo "\`\`\`" >> results_summary.md
-              head -n 10 "results/$LATEST_RUN/reports/final_summary_report.csv" >> results_summary.md
+              head -n 10 "runs/$LATEST_RUN/reports/final_summary_report.csv" >> results_summary.md
               echo "\`\`\`" >> results_summary.md
             fi
             
             cat results_summary.md
           else
-            echo "No results directory found - flow may have failed"
+            echo "No runs directory found - flow may have failed"
+            # Show what directories exist for debugging
+            echo "Available directories:"
+            ls -la
             exit 1
           fi
           
@@ -111,9 +125,9 @@ jobs:
         with:
           name: openlane-results-${{ github.run_number }}
           path: |
-            results/
+            runs/
             results_summary.md
-            openlane_run/designs/my_design/config.json
+            designs/my_design/config.json
           retention-days: 30
           
       - name: Upload Logs on Failure
@@ -122,5 +136,5 @@ jobs:
         with:
           name: openlane-logs-${{ github.run_number }}
           path: |
-            results/*/logs/
+            runs/*/logs/
           retention-days: 7
